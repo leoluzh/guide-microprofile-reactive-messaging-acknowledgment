@@ -21,7 +21,10 @@ import java.util.logging.Logger;
 
 import javax.enterprise.context.ApplicationScoped;
 
+import org.eclipse.microprofile.reactive.messaging.Acknowledgment;
+import org.eclipse.microprofile.reactive.messaging.Acknowledgment.Strategy;
 import org.eclipse.microprofile.reactive.messaging.Incoming;
+import org.eclipse.microprofile.reactive.messaging.Message;
 import org.eclipse.microprofile.reactive.messaging.Outgoing;
 import org.eclipse.microprofile.reactive.streams.operators.PublisherBuilder;
 import org.eclipse.microprofile.reactive.streams.operators.ReactiveStreams;
@@ -61,22 +64,30 @@ public class SystemService {
     // tag::sendProperty[]
     @Incoming("propertyRequest")
     @Outgoing("propertyResponse")
-    public PublisherBuilder<PropertyMessage> sendProperty(String propertyName) {
-        logger.info("sendProperty: " + propertyName);
-        String propertyValue = System.getProperty(propertyName);
+    @Acknowledgment(Strategy.MANUAL)
+    public PublisherBuilder<Message<PropertyMessage>> sendProperty(Message<String> propertyMessage) {
+        String propertyName = propertyMessage.getPayload();
+        String propertyValue = System.getProperty( propertyName , "unknown" );
+        logger.info("sendProperty: " + propertyValue );
         // tag::null[]
-        if (propertyValue == null) {
-            logger.warning(propertyName + " is not System property.");
-            // tag::returnEmpty[]
-            return ReactiveStreams.empty();
-            // end::returnEmpty[]
+        if( propertyName == null || 
+        	propertyName.isEmpty() ||
+        	propertyName.equals("unknown") ) {
+        	logger.warning(
+        			"Provived property: " + 
+        			propertyName + 
+        			" is not a system property.");
+        	propertyMessage.ack();
+        	return ReactiveStreams.empty();
         }
         // end::null[]
         // tag::validReturn[]
-        PropertyMessage message =
-                new PropertyMessage(getHostname(),
-                                    propertyName,
-                                    System.getProperty(propertyName, "unknown"));
+        Message<PropertyMessage> message = Message.of( new PropertyMessage(
+        		getHostname() , 
+        		propertyName ,
+        		propertyValue) ,
+        	propertyMessage::ack
+        );        
         return ReactiveStreams.of(message);
         // end::validReturn[]
     }
